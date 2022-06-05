@@ -15,39 +15,45 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from jira.resources import Issue, Worklog
+from jira import JIRA
 
 from typing import Callable, TypeAlias, Iterable
 
 from types import SimpleNamespace
 
 
-WorklogPredicate: TypeAlias = Callable[[Worklog, Issue], bool]
+WorklogPredicate: TypeAlias = Callable[[Worklog, Issue, JIRA], bool]
 
 
 def filter_issuetype(issuetypes: Iterable[str]) -> WorklogPredicate:
-    def pred(w: Worklog, i: Issue) -> bool:
+    def pred(w: Worklog, i: Issue, j: JIRA) -> bool:
         return i.fields.issuetype.name in issuetypes
 
     return pred
 
 
 def filter_epic(epics: Iterable[str | None]) -> WorklogPredicate:
-    def get_parent_epic(issue: Issue) -> Issue | SimpleNamespace:
+    def get_parent_epic(issue: Issue, jira: JIRA) -> Issue | SimpleNamespace:
         if issue.fields.issuetype.name == "Epic":
             return issue
-        elif issue.fields.parent is not None:  # type: ignore
-            return get_parent_epic(issue.fields.parent)  # type: ignore
-        else:
-            return SimpleNamespace(name=None)
 
-    def pred(w: Worklog, i: Issue) -> bool:
-        return get_parent_epic(i).name in epics
+        try:
+            if issue.fields.parent is not None:  # type: ignore
+                parent = jira.search_issues(f"key = {issue.fields.parent.key}")[0]  # type: ignore
+                return get_parent_epic(parent, jira)  # type: ignore
+            else:
+                return SimpleNamespace(fields=SimpleNamespace(summary=None))
+        except AttributeError:
+            return SimpleNamespace(fields=SimpleNamespace(summary=None))
+
+    def pred(w: Worklog, i: Issue, j: JIRA) -> bool:
+        return get_parent_epic(i, j).fields.summary in epics
 
     return pred
 
 
 def filter_component(components: Iterable[str | None]) -> WorklogPredicate:
-    def pred(w: Worklog, i: Issue) -> bool:
+    def pred(w: Worklog, i: Issue, j: JIRA) -> bool:
         if i.fields.components == []:  # type: ignore
             return None in components
 

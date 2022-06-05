@@ -55,12 +55,19 @@ if __name__ == "__main__":
 
     sprint = get_sprint(jira)
 
+    # pprint(jira.search_issues("issueType = 'Epic'")[1].raw)
+
     print(get_sprint_name(sprint=sprint))
     print(get_sprint_dates_str(sprint=sprint))
     print(get_sprint_goal(sprint=sprint))
     wl = get_all_worklogs_by_user(jira)
     pprint(get_week_work_hours_by_user(wl))
     pprint(get_average_work_hours_by_user(wl, start_date=datetime(2022, 5, 12)))
+
+    # mip = sum_worklogs(wl["William Bruneau"], filter_epic(["MIP"]), jira=jira)
+    # tot = sum_worklogs(wl["William Bruneau"], jira=jira)
+    # pourc = (mip / tot) * 100
+    # print(mip, tot, pourc)
 
     # print(get_user(jira, "Philippe Warren"))
     # print(get_all_issues(jira))

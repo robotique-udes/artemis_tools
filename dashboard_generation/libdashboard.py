@@ -20,7 +20,9 @@ from jira.resources import Sprint, User, Issue, Worklog
 from datetime import datetime
 from collections import defaultdict
 
-from typing import Iterable, cast, Callable
+from typing import Iterable, cast
+
+from libworklogfilter import WorklogPredicate
 
 from libdatetime import (
     get_date,
@@ -162,13 +164,13 @@ def get_all_worklogs_by_user_for_week(jira: JIRA) -> dict[str, list[Worklog]]:
 
 def sum_worklogs(
     worklogs: list[Worklog],
-    predicate: Callable[[Worklog, Issue], bool] | None = None,
+    predicate: WorklogPredicate | None = None,
     jira: JIRA | None = None,
 ) -> float:
     if predicate is not None and jira is None:
         raise ValueError("Must provide `jira` when using `predicate`")
 
-    predicate = predicate or (lambda x, y: True)
+    predicate = predicate or (lambda x, y, z: True)
 
     def get_issue(worklog: Worklog) -> Issue | None:
         return jira.issue(worklog.issueId) if jira is not None else None
@@ -177,7 +179,7 @@ def sum_worklogs(
         sum(
             i.timeSpentSeconds
             for i in worklogs
-            if predicate(i, cast(Issue, get_issue(i)))
+            if predicate(i, cast(Issue, get_issue(i)), cast(JIRA, jira))
         )
         / 3600
     )
