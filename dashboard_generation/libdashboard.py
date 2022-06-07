@@ -142,7 +142,7 @@ def filter_worklog_for_week(worklogs: list[Worklog]) -> list[Worklog]:
     return [
         i
         for i in worklogs
-        if get_date(i.updated) >= lower_bound and get_date(i.updated) < upper_bound
+        if get_date(i.started) >= lower_bound and get_date(i.started) < upper_bound
     ]
 
 
@@ -154,8 +154,8 @@ def get_all_worklogs_by_user_for_week(jira: JIRA) -> dict[str, list[Worklog]]:
     for issue in get_all_issues(jira):
         for worklog in jira.worklogs(issue.key):
             if (
-                get_date(worklog.updated) >= lower_bound
-                and get_date(worklog.updated) < upper_bound
+                get_date(worklog.started) >= lower_bound
+                and get_date(worklog.started) < upper_bound
             ):
                 d[worklog.author.displayName].append(worklog)
 

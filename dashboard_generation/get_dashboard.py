@@ -64,6 +64,8 @@ if __name__ == "__main__":
     pprint(get_week_work_hours_by_user(wl))
     pprint(get_average_work_hours_by_user(wl, start_date=datetime(2022, 5, 12)))
 
+    # pprint(wl["Philippe Warren"][0].raw)
+
     # mip = sum_worklogs(wl["William Bruneau"], filter_epic(["MIP"]), jira=jira)
     # tot = sum_worklogs(wl["William Bruneau"], jira=jira)
     # pourc = (mip / tot) * 100
