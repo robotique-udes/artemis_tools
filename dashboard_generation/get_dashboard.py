@@ -17,98 +17,184 @@
 from jira import JIRA
 from dotenv import load_dotenv  # type: ignore
 import os
+from pathlib import Path
 
-from pprint import pprint
 from datetime import datetime
 
-from libdashboard import (
+from subprocess import call, DEVNULL
+
+from libdashboardjira import (
     get_sprint_name,
     get_sprint,
+    get_sprint_for_next_week,
     get_sprint_dates_str,
     get_sprint_goal,
-    # get_user,
     get_all_worklogs_by_user,
-    # get_all_worklogs_by_user_for_week,
-    # sum_worklogs,
-    # filter_worklog_for_week,
-    # get_all_issues,
-    get_average_work_hours_by_user,
-    get_week_work_hours_by_user,
+    filter_worklog_for_week,
+    get_all_issues,
+    get_tb_issue_yaml_assignee,
+    get_work_hours_by_user_by_category,
+    WorklogUser,
+    get_all_worked_on_issue_from_worklogs,
+    get_all_open_issues_in_sprint,
 )
 
-# from libdatetime import (
-#     date_is_in_last_seven_days,
-#     get_last_day,
-#     get_next_day,
-#     Weekday,
-# )
+from libdashboardlatex import (
+    get_epic_advancements,
+    get_block_questions,
+    gen_latex,
+    get_list_for_re_sub,
+    get_risks,
+    get_problems,
+    WorkedOnIssue,
+    ToWorkOnIssue,
+    get_to_work_on_issues,
+    get_worked_on_issues,
+    escape_latex,
+)
 
-# from libworklogfilter import filter_component, filter_epic, filter_issuetype
+from libdatetime import (
+    get_next_day,
+    format_date,
+    Weekday,
+)
+
+from libworklogfilter import WorklogIssue
+
+from libdashboardyaml import DashboardConfig
+
+from libdashboardgraph import generate_image
+
+from PyPDF2 import PdfMerger
 
 if __name__ == "__main__":
     load_dotenv()
+
+    as_date = datetime(2022, 6, 8)
 
     jira = JIRA(
         os.environ["jira_site_url"],
         basic_auth=(os.environ["jira_api_email"], os.environ["jira_api_token"]),
     )
 
-    sprint = get_sprint(jira)
+    sprint = get_sprint(jira, date=as_date)
 
-    # pprint(jira.search_issues("issueType = 'Epic'")[1].raw)
+    cfg = DashboardConfig(
+        *get_tb_issue_yaml_assignee(
+            jira, datetime=get_next_day(Weekday.Thursday, as_date)
+        )
+    )
 
-    print(get_sprint_name(sprint=sprint))
-    print(get_sprint_dates_str(sprint=sprint))
-    print(get_sprint_goal(sprint=sprint))
     wl = get_all_worklogs_by_user(jira)
-    pprint(get_week_work_hours_by_user(wl))
-    pprint(get_average_work_hours_by_user(wl, start_date=datetime(2022, 5, 12)))
+    iss = get_all_issues(jira)
 
-    # pprint(wl["Philippe Warren"][0].raw)
+    all_wl: list[WorklogIssue] = []
+    for user in wl:
+        all_wl.extend(wl[user])
 
-    # mip = sum_worklogs(wl["William Bruneau"], filter_epic(["MIP"]), jira=jira)
-    # tot = sum_worklogs(wl["William Bruneau"], jira=jira)
-    # pourc = (mip / tot) * 100
-    # print(mip, tot, pourc)
+    worked_on_issues = sorted(
+        [
+            WorkedOnIssue(i)
+            for i in get_all_worked_on_issue_from_worklogs(
+                filter_worklog_for_week(all_wl, as_date=as_date), sprint=sprint
+            )
+        ],
+        key=lambda i: i.status,
+    )
 
-    # print(get_user(jira, "Philippe Warren"))
-    # print(get_all_issues(jira))
-    # issues = get_all_issues(jira)
-    # for issue in get_all_issues(jira):
-    #     print(issue.key)
-    #     pprint(issue.raw)
-    #     break
-    # print(wl["Philippe Warren"][0].raw)
+    to_work_on_issues = sorted(
+        [
+            ToWorkOnIssue(i)
+            for i in get_all_open_issues_in_sprint(
+                iss, sprint=get_sprint_for_next_week(jira, as_date=as_date)
+            )
+        ],
+        key=lambda x: x.assignee,
+    )
 
-    # wlf = filter(lambda x: date_is_in_last_seven_days(x.updated), wl["William Bruneau"])
-    # pprint(list(wlf))
-    # pprint(list(wl["William Bruneau"]))
-    # print(get_all_worklogs_by_user(jira))
+    wl = get_work_hours_by_user_by_category(
+        wl,
+        start_date=datetime(2022, 5, 12),
+        jira=jira,
+        as_date=as_date,
+        categories={
+            "tech": ["Story", "Tâche", "Test", "Bug"],
+            "admin": ["Admin", "Livrable", "Financement", "Réunion"],
+        },
+    )
 
-    # print(get_last_day(Weekday.Thursday))
-    # print(get_next_day(Weekday.Thursday))
+    wlu = [WorklogUser(k, v) for k, v in wl.items()]
 
-    # print(sum_worklogs(filter_worklog_for_week(wl["Philippe Warren"])))
-    # print(
-    #     sum_worklogs(
-    #         wl["Philippe Warren"],
-    #         lambda w, i: i.fields.issuetype.name in ("Admin"),
-    #         jira=jira,
-    #     )
-    # )
-    # print(
-    #     sum_worklogs(
-    #         wl["Philippe Warren"],
-    #         filter_issuetype(("Admin",)),
-    #         jira=jira,
-    #     )
-    # )
-    # print(
-    #     sum_worklogs(
-    #         wl["Philippe Warren"],
-    #         filter_component(("Cours",)),
-    #         jira=jira,
-    #     )
-    # )
-    # print(get_last_day(Weekday.Thursday, date=datetime(2022, 5, 26, 12)))
-    # print(get_next_day(Weekday.Thursday, date=datetime(2022, 5, 26, 12)))
+    in_path = Path("dashboard_generation/PMC_Tableau_de_bord")
+    out_path = Path("dashboard_generation/PMC_Tableau_de_bord_out")
+
+    main_file = "main.tex"
+    main_done_file = "main_fait.tex"
+    main_todo_file = "main_a_faire.tex"
+    image_hours_file = "images/heures.png"
+
+    REPLACEMENTS: dict[str, str] = {
+        r"@@SPRINT-NOM@@": escape_latex(get_sprint_name(sprint=sprint)),
+        r"@@SPRINT-DATE@@": escape_latex(get_sprint_dates_str(sprint=sprint)),
+        r"@@SPRINT-OBJECTIF@@": escape_latex(get_sprint_goal(sprint=sprint)),
+        r"@@DATEHEURE-RENCONTRE@@": escape_latex(
+            format_date(get_next_day(Weekday.Thursday, date=as_date))
+        ),
+        r"@@SUIVI-PRESENTATEUR@@": escape_latex(cfg.presentateur),
+        r"@@SUIVI-SUJETS@@": get_list_for_re_sub(cfg.sujets_suivi),
+        r"@@ORDRE-JOUR@@": get_list_for_re_sub(cfg.ordre_du_jour),
+        r"%\s+@@EPICS-AVANCEMENTS@@": get_epic_advancements(
+            jira=jira, filter=cfg.epic_filter
+        ),
+        r"%\s+@@SEMAINE-RISQUES@@": get_risks(cfg.risks),
+        r"%\s+@@SEMAINE-PROBLEMES@@": get_problems(cfg.problems),
+        r"%\s+@@BLOC-QUESTIONS@@": get_block_questions(cfg.questions),
+        r"@@SEMAINE-TACHES-FAITES@@": get_worked_on_issues(worked_on_issues),
+        r"@@SEMAINE-TACHES-A-FAIRE@@": get_to_work_on_issues(to_work_on_issues),
+    }
+
+    generate_image(wlu, file=out_path / image_hours_file)
+    gen_latex(
+        REPLACEMENTS,
+        ifile=in_path / main_file,
+        ofile=out_path / main_file,
+    )
+    gen_latex(
+        REPLACEMENTS,
+        ifile=in_path / main_done_file,
+        ofile=out_path / main_done_file,
+    )
+    gen_latex(
+        REPLACEMENTS,
+        ifile=in_path / main_todo_file,
+        ofile=out_path / main_todo_file,
+    )
+
+    latexmk_cmd = "latexmk -pdf -f -interaction=nonstopmode -outdir=../latex_gen"
+
+    call(f"{latexmk_cmd} {main_file}", stdout=DEVNULL, stderr=DEVNULL, cwd=out_path)
+    call(
+        f"{latexmk_cmd} {main_done_file}", stdout=DEVNULL, stderr=DEVNULL, cwd=out_path
+    )
+    call(
+        f"{latexmk_cmd} {main_todo_file}", stdout=DEVNULL, stderr=DEVNULL, cwd=out_path
+    )
+
+    merger = PdfMerger()
+    merger.append(
+        str(Path("dashboard_generation/latex_gen") / main_file.replace(".tex", ".pdf"))
+    )
+    merger.append(
+        str(
+            Path("dashboard_generation/latex_gen")
+            / main_done_file.replace(".tex", ".pdf")
+        )
+    )
+    merger.append(
+        str(
+            Path("dashboard_generation/latex_gen")
+            / main_todo_file.replace(".tex", ".pdf")
+        )
+    )
+
+    merger.write(str("out/PMC_Tableau_de_bord.pdf"))

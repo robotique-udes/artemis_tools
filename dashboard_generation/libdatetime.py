@@ -76,3 +76,7 @@ def get_last_day(day: int | Weekday, date: datetime = datetime.today()) -> datet
         days = 7
 
     return date - timedelta(days=days)
+
+
+def format_date(date: datetime) -> str:
+    return strip_leading_zero(date.strftime("%d %B %Y"))

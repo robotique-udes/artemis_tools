@@ -20,14 +20,44 @@ from jira import JIRA
 from typing import Callable, TypeAlias, Iterable
 
 from types import SimpleNamespace
+from dataclasses import dataclass
 
 
-WorklogPredicate: TypeAlias = Callable[[Worklog, Issue, JIRA], bool]
+@dataclass(frozen=True)
+class WorklogIssue:
+    wl: Worklog
+    issue: Issue
+
+
+WorklogPredicate: TypeAlias = Callable[[WorklogIssue, JIRA], bool]
+
+
+def filter_invert(pred: WorklogPredicate) -> WorklogPredicate:
+    def pred_inv(wi: WorklogIssue, j: JIRA) -> bool:
+        return not pred(wi, j)
+
+    return pred_inv
 
 
 def filter_issuetype(issuetypes: Iterable[str]) -> WorklogPredicate:
-    def pred(w: Worklog, i: Issue, j: JIRA) -> bool:
-        return i.fields.issuetype.name in issuetypes
+    def get_parent_issuetype(issue: Issue, jira: JIRA) -> str:
+        if (
+            issue.fields.issuetype.subtask is True
+            or issue.fields.issuetype.name == "Sous-tâche"
+        ):
+            try:
+                if issue.fields.parent is not None:  # type: ignore
+                    parent = jira.search_issues(f"key = {issue.fields.parent.key}")[0]  # type: ignore
+                    return get_parent_issuetype(parent, jira)  # type: ignore
+                else:
+                    raise AttributeError("Sub-task has no parent")
+            except AttributeError:
+                raise AttributeError("Sub-task has no parent")
+        else:
+            return issue.fields.issuetype.name
+
+    def pred(wi: WorklogIssue, j: JIRA) -> bool:
+        return get_parent_issuetype(wi.issue, j) in issuetypes
 
     return pred
 
@@ -46,18 +76,18 @@ def filter_epic(epics: Iterable[str | None]) -> WorklogPredicate:
         except AttributeError:
             return SimpleNamespace(fields=SimpleNamespace(summary=None))
 
-    def pred(w: Worklog, i: Issue, j: JIRA) -> bool:
-        return get_parent_epic(i, j).fields.summary in epics
+    def pred(wi: WorklogIssue, j: JIRA) -> bool:
+        return get_parent_epic(wi.issue, j).fields.summary in epics
 
     return pred
 
 
 def filter_component(components: Iterable[str | None]) -> WorklogPredicate:
-    def pred(w: Worklog, i: Issue, j: JIRA) -> bool:
-        if i.fields.components == []:  # type: ignore
+    def pred(wi: WorklogIssue, j: JIRA) -> bool:
+        if wi.issue.fields.components == []:  # type: ignore
             return None in components
 
-        c: set[str] = set(j.name for j in i.fields.components)  # type: ignore
+        c: set[str] = set(j.name for j in wi.issue.fields.components)  # type: ignore
         cp = set(components)
         return len(c & cp) > 0
 
