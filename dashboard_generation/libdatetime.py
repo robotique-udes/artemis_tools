@@ -54,9 +54,11 @@ def strip_leading_zero(date: str) -> str:
     return re.sub(r"^0", "", date)
 
 
-def get_next_day(day: int | Weekday, date: datetime = datetime.today()) -> datetime:
+def get_next_day(
+    day: int | Weekday, date: datetime = datetime.today(), hour: int = 11
+) -> datetime:
     old_date = date.astimezone()
-    date = date.astimezone().replace(hour=11, minute=0, second=0, microsecond=0)
+    date = date.astimezone().replace(hour=hour, minute=0, second=0, microsecond=0)
 
     days = ((day.value if isinstance(day, Weekday) else day) - (date.weekday() + 7)) % 7
 
@@ -66,9 +68,11 @@ def get_next_day(day: int | Weekday, date: datetime = datetime.today()) -> datet
     return date + timedelta(days=days)
 
 
-def get_last_day(day: int | Weekday, date: datetime = datetime.today()) -> datetime:
+def get_last_day(
+    day: int | Weekday, date: datetime = datetime.today(), hour: int = 11
+) -> datetime:
     old_date = date.astimezone()
-    date = date.astimezone().replace(hour=11, minute=0, second=0, microsecond=0)
+    date = date.astimezone().replace(hour=hour, minute=0, second=0, microsecond=0)
 
     days = (date.weekday() - (day.value if isinstance(day, Weekday) else day)) % 7
 
@@ -80,3 +84,7 @@ def get_last_day(day: int | Weekday, date: datetime = datetime.today()) -> datet
 
 def format_date(date: datetime) -> str:
     return strip_leading_zero(date.strftime("%d %B %Y"))
+
+
+def format_date_file_postfix(date: datetime) -> str:
+    return f"{date.strftime('%Y_%m_%d')}"

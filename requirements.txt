@@ -4,5 +4,5 @@ python-dotenv==0.20.0
 ruamel.yaml==0.17.21
 bokeh==2.4.3
 selenium==4.2.0
-selenium-chromedriver==1.3
+chromedriver_binary
 PyPDF2==2.2.0

@@ -26,20 +26,36 @@ from libdashboardjira import (
     get_average_work_hours_by_user,
     get_week_work_hours_by_user,
     get_average_work_hours_by_user_rolling,
+    get_all_issues,
+    issues_by_key,
 )
 
 if __name__ == "__main__":
     load_dotenv()
 
-    as_date = datetime(2022, 6, 8)
+    as_date = datetime.today()
+    hour = 0
 
     jira = JIRA(
         os.environ["jira_site_url"],
         basic_auth=(os.environ["jira_api_email"], os.environ["jira_api_token"]),
     )
 
-    wl = get_all_worklogs_by_user(jira)
+    iss = get_all_issues(jira)
+    diss = issues_by_key(iss)
+    wl = get_all_worklogs_by_user(jira, diss)
 
-    pprint(get_week_work_hours_by_user(wl))
-    pprint(get_average_work_hours_by_user(wl, start_date=datetime(2022, 5, 12)))
-    pprint(get_average_work_hours_by_user_rolling(wl, start_date=datetime(2022, 5, 12)))
+    print("Semaine")
+    pprint(get_week_work_hours_by_user(wl, hour=hour), indent=2)
+    print("Moyenne")
+    pprint(
+        get_average_work_hours_by_user(wl, start_date=datetime(2022, 5, 12, 12)),
+        indent=2,
+    )
+    print("Moyenne roulante")
+    pprint(
+        get_average_work_hours_by_user_rolling(
+            wl, start_date=datetime(2022, 5, 12, 12)
+        ),
+        indent=2,
+    )

@@ -15,7 +15,6 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from jira.resources import Issue, Worklog
-from jira import JIRA
 
 from typing import Callable, TypeAlias, Iterable
 
@@ -29,26 +28,26 @@ class WorklogIssue:
     issue: Issue
 
 
-WorklogPredicate: TypeAlias = Callable[[WorklogIssue, JIRA], bool]
+WorklogPredicate: TypeAlias = Callable[[WorklogIssue, dict[str, Issue]], bool]
 
 
 def filter_invert(pred: WorklogPredicate) -> WorklogPredicate:
-    def pred_inv(wi: WorklogIssue, j: JIRA) -> bool:
-        return not pred(wi, j)
+    def pred_inv(wi: WorklogIssue, id: dict[str, Issue]) -> bool:
+        return not pred(wi, id)
 
     return pred_inv
 
 
 def filter_issuetype(issuetypes: Iterable[str]) -> WorklogPredicate:
-    def get_parent_issuetype(issue: Issue, jira: JIRA) -> str:
+    def get_parent_issuetype(issue: Issue, issues_dict: dict[str, Issue]) -> str:
         if (
             issue.fields.issuetype.subtask is True
             or issue.fields.issuetype.name == "Sous-tâche"
         ):
             try:
                 if issue.fields.parent is not None:  # type: ignore
-                    parent = jira.search_issues(f"key = {issue.fields.parent.key}")[0]  # type: ignore
-                    return get_parent_issuetype(parent, jira)  # type: ignore
+                    parent = issues_dict[issue.fields.parent.key]  # type: ignore
+                    return get_parent_issuetype(parent, issues_dict)  # type: ignore
                 else:
                     raise AttributeError("Sub-task has no parent")
             except AttributeError:
@@ -56,34 +55,36 @@ def filter_issuetype(issuetypes: Iterable[str]) -> WorklogPredicate:
         else:
             return issue.fields.issuetype.name
 
-    def pred(wi: WorklogIssue, j: JIRA) -> bool:
-        return get_parent_issuetype(wi.issue, j) in issuetypes
+    def pred(wi: WorklogIssue, id: dict[str, Issue]) -> bool:
+        return get_parent_issuetype(wi.issue, id) in issuetypes
 
     return pred
 
 
 def filter_epic(epics: Iterable[str | None]) -> WorklogPredicate:
-    def get_parent_epic(issue: Issue, jira: JIRA) -> Issue | SimpleNamespace:
+    def get_parent_epic(
+        issue: Issue, issues_dict: dict[str, Issue]
+    ) -> Issue | SimpleNamespace:
         if issue.fields.issuetype.name == "Epic":
             return issue
 
         try:
             if issue.fields.parent is not None:  # type: ignore
-                parent = jira.search_issues(f"key = {issue.fields.parent.key}")[0]  # type: ignore
-                return get_parent_epic(parent, jira)  # type: ignore
+                parent = issues_dict[issue.fields.parent.key]  # type: ignore
+                return get_parent_epic(parent, issues_dict)  # type: ignore
             else:
                 return SimpleNamespace(fields=SimpleNamespace(summary=None))
         except AttributeError:
             return SimpleNamespace(fields=SimpleNamespace(summary=None))
 
-    def pred(wi: WorklogIssue, j: JIRA) -> bool:
-        return get_parent_epic(wi.issue, j).fields.summary in epics
+    def pred(wi: WorklogIssue, id: dict[str, Issue]) -> bool:
+        return get_parent_epic(wi.issue, id).fields.summary in epics
 
     return pred
 
 
 def filter_component(components: Iterable[str | None]) -> WorklogPredicate:
-    def pred(wi: WorklogIssue, j: JIRA) -> bool:
+    def pred(wi: WorklogIssue, id: dict[str, Issue]) -> bool:
         if wi.issue.fields.components == []:  # type: ignore
             return None in components
 

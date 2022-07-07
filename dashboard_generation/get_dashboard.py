@@ -23,6 +23,8 @@ from datetime import datetime
 
 from subprocess import call, DEVNULL
 
+from concurrent.futures import ThreadPoolExecutor
+
 from libdashboardjira import (
     get_sprint_name,
     get_sprint,
@@ -32,11 +34,12 @@ from libdashboardjira import (
     get_all_worklogs_by_user,
     filter_worklog_for_week,
     get_all_issues,
-    get_tb_issue_yaml_assignee,
+    issues_by_key,
+    get_tb_issue_yaml,
     get_work_hours_by_user_by_category,
     WorklogUser,
     get_all_worked_on_issue_from_worklogs,
-    get_all_open_issues_in_sprint,
+    get_all_open_issues_in_sprints,
 )
 
 from libdashboardlatex import (
@@ -46,6 +49,7 @@ from libdashboardlatex import (
     get_list_for_re_sub,
     get_risks,
     get_problems,
+    get_budget,
     WorkedOnIssue,
     ToWorkOnIssue,
     get_to_work_on_issues,
@@ -53,11 +57,7 @@ from libdashboardlatex import (
     escape_latex,
 )
 
-from libdatetime import (
-    get_next_day,
-    format_date,
-    Weekday,
-)
+from libdatetime import get_next_day, format_date, Weekday, format_date_file_postfix
 
 from libworklogfilter import WorklogIssue
 
@@ -70,23 +70,26 @@ from PyPDF2 import PdfMerger
 if __name__ == "__main__":
     load_dotenv()
 
-    as_date = datetime(2022, 6, 8)
+    # as_date = datetime(2022, 6, 22)
+    as_date = datetime.today()
+    hour = 0
 
     jira = JIRA(
         os.environ["jira_site_url"],
         basic_auth=(os.environ["jira_api_email"], os.environ["jira_api_token"]),
+        async_=True,
     )
 
     sprint = get_sprint(jira, date=as_date)
 
     cfg = DashboardConfig(
-        *get_tb_issue_yaml_assignee(
-            jira, datetime=get_next_day(Weekday.Thursday, as_date)
-        )
+        get_tb_issue_yaml(jira, datetime=get_next_day(Weekday.Thursday, as_date, hour)),
+        as_date=as_date,
     )
 
-    wl = get_all_worklogs_by_user(jira)
     iss = get_all_issues(jira)
+    diss = issues_by_key(iss)
+    wl = get_all_worklogs_by_user(jira, diss)
 
     all_wl: list[WorklogIssue] = []
     for user in wl:
@@ -96,7 +99,8 @@ if __name__ == "__main__":
         [
             WorkedOnIssue(i)
             for i in get_all_worked_on_issue_from_worklogs(
-                filter_worklog_for_week(all_wl, as_date=as_date), sprint=sprint
+                filter_worklog_for_week(all_wl, as_date=as_date, hour=hour),
+                sprint=sprint,
             )
         ],
         key=lambda i: i.status,
@@ -105,8 +109,12 @@ if __name__ == "__main__":
     to_work_on_issues = sorted(
         [
             ToWorkOnIssue(i)
-            for i in get_all_open_issues_in_sprint(
-                iss, sprint=get_sprint_for_next_week(jira, as_date=as_date)
+            for i in get_all_open_issues_in_sprints(
+                iss,
+                sprints={
+                    get_sprint(jira, date=as_date),
+                    get_sprint_for_next_week(jira, as_date=as_date, hour=hour),
+                },
             )
         ],
         key=lambda x: x.assignee,
@@ -115,11 +123,12 @@ if __name__ == "__main__":
     wl = get_work_hours_by_user_by_category(
         wl,
         start_date=datetime(2022, 5, 12),
-        jira=jira,
+        issues_dict=diss,
         as_date=as_date,
+        hour=hour,
         categories={
             "tech": ["Story", "Tâche", "Test", "Bug"],
-            "admin": ["Admin", "Livrable", "Financement", "Réunion"],
+            "admin": ["Admin", "Financement", "TB"],
         },
     )
 
@@ -141,19 +150,23 @@ if __name__ == "__main__":
             format_date(get_next_day(Weekday.Thursday, date=as_date))
         ),
         r"@@SUIVI-PRESENTATEUR@@": escape_latex(cfg.presentateur),
+        r"@@RENCONTRE-PRESENTATEUR@@": escape_latex(cfg.presentateur),
+        r"@@RENCONTRE-SECRETAIRE@@": escape_latex(cfg.secretaire),
         r"@@SUIVI-SUJETS@@": get_list_for_re_sub(cfg.sujets_suivi),
         r"@@ORDRE-JOUR@@": get_list_for_re_sub(cfg.ordre_du_jour),
         r"%\s+@@EPICS-AVANCEMENTS@@": get_epic_advancements(
             jira=jira, filter=cfg.epic_filter
         ),
-        r"%\s+@@SEMAINE-RISQUES@@": get_risks(cfg.risks),
-        r"%\s+@@SEMAINE-PROBLEMES@@": get_problems(cfg.problems),
+        r"%\s+@@SEMAINE-RISQUES@@": get_risks(cfg.risques),
+        r"%\s+@@SEMAINE-PROBLEMES@@": get_problems(cfg.problemes),
         r"%\s+@@BLOC-QUESTIONS@@": get_block_questions(cfg.questions),
+        r"%\s+@@SEMAINE-FINANCES@@": get_budget(cfg.finances),
         r"@@SEMAINE-TACHES-FAITES@@": get_worked_on_issues(worked_on_issues),
         r"@@SEMAINE-TACHES-A-FAIRE@@": get_to_work_on_issues(to_work_on_issues),
     }
 
     generate_image(wlu, file=out_path / image_hours_file)
+
     gen_latex(
         REPLACEMENTS,
         ifile=in_path / main_file,
@@ -170,15 +183,32 @@ if __name__ == "__main__":
         ofile=out_path / main_todo_file,
     )
 
+    # input("Press Enter to continue...")
+
     latexmk_cmd = "latexmk -pdf -f -interaction=nonstopmode -outdir=../latex_gen"
 
-    call(f"{latexmk_cmd} {main_file}", stdout=DEVNULL, stderr=DEVNULL, cwd=out_path)
-    call(
-        f"{latexmk_cmd} {main_done_file}", stdout=DEVNULL, stderr=DEVNULL, cwd=out_path
-    )
-    call(
-        f"{latexmk_cmd} {main_todo_file}", stdout=DEVNULL, stderr=DEVNULL, cwd=out_path
-    )
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.submit(
+            call,
+            f"{latexmk_cmd} {main_file}",
+            stdout=DEVNULL,
+            stderr=DEVNULL,
+            cwd=out_path,
+        )
+        executor.submit(
+            call,
+            f"{latexmk_cmd} {main_done_file}",
+            stdout=DEVNULL,
+            stderr=DEVNULL,
+            cwd=out_path,
+        )
+        executor.submit(
+            call,
+            f"{latexmk_cmd} {main_todo_file}",
+            stdout=DEVNULL,
+            stderr=DEVNULL,
+            cwd=out_path,
+        )
 
     merger = PdfMerger()
     merger.append(
@@ -197,4 +227,6 @@ if __name__ == "__main__":
         )
     )
 
-    merger.write(str("out/PMC_Tableau_de_bord.pdf"))
+    out_name = f"out/TB_Artemis_{format_date_file_postfix(get_next_day(Weekday.Thursday, date=as_date))}.pdf"
+
+    merger.write(out_name)

@@ -15,7 +15,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from bokeh.plotting import figure, show  # type: ignore
-from bokeh.io import export_png  # type: ignore
+from bokeh.io import export_png, export_svg  # type: ignore
 from bokeh.models import ColumnDataSource, FactorRange  # type: ignore
 
 from libdashboardjira import WorklogUser
@@ -47,12 +47,14 @@ def generate_image(h: list[WorklogUser], file: Path | None = None) -> None:
         LABELS.Avg.value,
     ]
 
+    nh = sorted(h, key=lambda x: x.user.split()[-1], reverse=True)
+
     tech: list[float] = []
     admin: list[float] = []
     other: list[float] = []
     avg: list[float] = []
     factors: list[tuple[str, str]] = []
-    for i in h:
+    for i in nh:
         factors.append((i.user, "Moyenne"))
         factors.append((i.user, "Semaine"))
         tech.append(0.0)
@@ -84,8 +86,8 @@ def generate_image(h: list[WorklogUser], file: Path | None = None) -> None:
     p = figure(
         y_range=FactorRange(*factors),
         x_axis_label="Temps (h)",
-        width=600,
-        height=400,
+        width=1800,
+        height=900,
         toolbar_location=None,
     )
     p.hbar_stack(  # type: ignore
@@ -97,19 +99,35 @@ def generate_image(h: list[WorklogUser], file: Path | None = None) -> None:
         legend_label=stackers,
     )
 
+    font_size = "26pt"
+
     p.add_layout(p.legend[0], "above")  # type: ignore
     p.legend.orientation = "horizontal"
     p.yaxis.group_label_orientation = "horizontal"
+    p.xaxis.axis_label_text_font_size = font_size
+    p.xaxis.major_label_text_font_size = font_size
+    p.yaxis.axis_label_text_font_size = font_size
+    p.yaxis.major_label_text_font_size = font_size
+    p.yaxis.group_text_font_size = font_size
+    p.legend.title_text_font_size = "32pt"
+    p.legend.label_text_font_size = "32pt"
 
     if file is not None:
         p.background_fill_color = None  # type: ignore
         p.border_fill_color = None  # type: ignore
-        try:
-            export_png(p, filename=file)
-        except RuntimeError:
-            print(
-                "Can't run export_png: install chromedriver using `python -m selenium-chromedriver`"
-            )
 
+        # Add chromedriver to PATH
+        import chromedriver_binary  # type: ignore
+
+        if str(file).lower().endswith(".svg"):
+            export_svg(
+                p,
+                filename=file,
+            )
+        else:
+            export_png(
+                p,
+                filename=file,
+            )
     else:
         show(p)

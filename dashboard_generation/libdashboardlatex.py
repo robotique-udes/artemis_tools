@@ -20,6 +20,8 @@ from jira import JIRA
 import re
 from pathlib import Path
 
+from datetime import datetime
+
 from typing import Iterable
 
 from libdashboardjira import (
@@ -41,12 +43,25 @@ def s_to_h(seconds: int) -> float:
     return seconds / 3600
 
 
+def format_progress(progress: int) -> str:
+    if progress == 0:
+        return f"\\\\cellcolor{{red}}{progress:.0f}\\\\%"
+    elif progress > 0 and progress <= 100 * 2 / 3:
+        return f"\\\\cellcolor{{orange}}{progress:.0f}\\\\%"
+    elif progress > 100 * 2 / 3 and progress < 100:
+        return f"\\\\cellcolor{{yellow}}{progress:.0f}\\\\%"
+    elif progress == 100:
+        return f"\\\\cellcolor{{green}}{progress:.0f}\\\\%"
+    else:
+        return f"{progress:.0f}\\\\%"
+
+
 class Risk:
     @staticmethod
     def color_map(level: int) -> str:
-        if level <= 3:
+        if level >= 3:
             return "\\\\cellcolor{green}"
-        elif level <= 5:
+        elif level == 2:
             return "\\\\cellcolor{yellow}"
         else:
             return "\\\\cellcolor{red}"
@@ -71,6 +86,37 @@ class Problem:
         return f"{escape_latex(self.name)} & {'Oui' if self.resolved else 'Non'} & {escape_latex(self.solution)} \\\\\\\\ \\\\hline"
 
 
+class Budget:
+    @staticmethod
+    def format_cash(value: float) -> str:
+        return f"\\\\SI{{{value:.2f}}}{{\\\\$}}"
+
+    def format_solde(self) -> str:
+        if self.solde < 0:
+            return f"\\\\cellcolor{{red}}{Budget.format_cash(self.solde)}"
+        else:
+            return Budget.format_cash(self.solde)
+
+    def format_montant(self) -> str:
+        return Budget.format_cash(self.montant) if self.montant else "--"
+
+    def __init__(
+        self,
+        date: str | None,
+        item: str | None,
+        montant: float | None,
+        solde: float,
+        as_date: datetime = datetime.today(),
+    ) -> None:
+        self.date = date or as_date.astimezone().strftime("%m/%d")
+        self.item = item
+        self.montant = montant
+        self.solde = solde
+
+    def __str__(self) -> str:
+        return f"{escape_latex(self.date)} & {escape_latex(self.item or '--')} & {self.format_montant()} & {self.format_solde()} \\\\\\\\ \\\\hline"
+
+
 class Epic:
     def __init__(self, epic: Issue) -> None:
         self.epic = epic
@@ -78,7 +124,7 @@ class Epic:
         self.key = epic.key
         self.duedate = epic.fields.duedate
         self.assignee: str = epic.fields.assignee.displayName if epic.fields.assignee else ""  # type: ignore
-        self.progress: int = s_to_h(epic.fields.aggregateprogress.progress)  # type: ignore
+        self.worked: int = s_to_h(epic.fields.aggregateprogress.progress)  # type: ignore
         self.estimate: int = s_to_h(epic.fields.aggregateprogress.total)  # type: ignore
         try:
             self.percent: int = epic.fields.aggregateprogress.percent  # type: ignore
@@ -86,18 +132,31 @@ class Epic:
             self.percent = 0
 
     def __str__(self) -> str:
-        return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.estimate:.0f} & {self.progress:.0f} & {self.percent:.0f}\\\\% \\\\\\\\ \\\\hline"
+        return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.estimate:.0f} & {self.worked:.0f} & {format_progress(self.percent)} \\\\\\\\ \\\\hline"
 
 
 class WorkedOnIssue:
-    @staticmethod
-    def format_ratio(ratio: float) -> str:
+    def format_ratio(self) -> str:
+        ratio = self.ratio
         if ratio <= -1:
             return "-"
-        elif ratio >= 150:
+        elif ratio <= 100 * 2 / 3 and self.status == "Terminé":
+            return f"\\\\cellcolor{{orange}}{ratio:.0f}\\\\%"
+        elif ratio >= 100 * 3 / 2:
             return f"\\\\cellcolor{{red}}{ratio:.0f}\\\\%"
         else:
             return f"{ratio:.0f}\\\\%"
+
+    def format_status(self) -> str:
+        status = self.status
+        if status == "A faire":
+            return f"\\\\cellcolor{{red}}À faire"
+        elif status == "En cours":
+            return f"\\\\cellcolor{{yellow}}{escape_latex(status)}"
+        elif status == "Terminé":
+            return f"\\\\cellcolor{{green}}{escape_latex(status)}"
+        else:
+            return f"{escape_latex(status)}"
 
     def __init__(self, issue: Issue) -> None:
         self.issue = issue
@@ -109,10 +168,14 @@ class WorkedOnIssue:
         self.original_estimate = s_to_h(issue.fields.timeoriginalestimate or 0)  # type: ignore
         self.remaining_estimate = s_to_h(issue.fields.timeestimate or 0)  # type: ignore
         self.worked = s_to_h(issue.fields.timespent or 0)  # type: ignore
+        try:
+            self.progress: int = issue.fields.progress.percent  # type: ignore
+        except AttributeError:
+            self.progress = 0
         self.ratio = 100 * self.worked / self.original_estimate if self.original_estimate != 0 else -1  # type: ignore
 
     def __str__(self) -> str:
-        return f"{escape_latex(self.name)} & {escape_latex(self.status)} & {escape_latex(self.assignee)} & {self.original_estimate:.1f} & {self.remaining_estimate:.1f} & {self.worked:.1f} & {self.format_ratio(self.ratio)} \\\\\\\\ \\\\hline"
+        return f"{escape_latex(self.name)} & {self.format_status()} & {escape_latex(self.assignee)} & {self.original_estimate:.1f} & {self.remaining_estimate:.1f} & {self.worked:.1f} & {format_progress(self.progress)} & {self.format_ratio()} \\\\\\\\ \\\\hline"
 
 
 class ToWorkOnIssue:
@@ -123,16 +186,20 @@ class ToWorkOnIssue:
             issue.fields.assignee.displayName if issue.fields.assignee else ""
         )
         self.remaining_estimate = s_to_h(issue.fields.timeestimate or 0)  # type: ignore
+        try:
+            self.progress: int = issue.fields.progress.percent  # type: ignore
+        except AttributeError:
+            self.progress = 0
 
     def __str__(self) -> str:
-        return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.remaining_estimate:.1f} \\\\\\\\ \\\\hline"
+        return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.remaining_estimate:.1f} & {format_progress(self.progress)} \\\\\\\\ \\\\hline"
 
 
 def get_epic_advancements(jira: JIRA, filter: Iterable[str]) -> str:
     return "\n".join(
         str(Epic(epic))  # type: ignore
         for epic in sorted(get_all_epics(jira), key=lambda x: x.fields.summary)  # type: ignore
-        if any(f in Epic(epic).name for f in filter)  # type: ignore
+        if any(f.lower() in Epic(epic).name.lower() for f in filter)  # type: ignore
     )
 
 
@@ -142,6 +209,10 @@ def get_risks(risks: list[Risk]) -> str:
 
 def get_problems(problems: list[Problem]) -> str:
     return "\n".join(str(problem) for problem in problems)
+
+
+def get_budget(budget: list[Budget]) -> str:
+    return "\n".join(str(b) for b in budget)
 
 
 def get_to_work_on_issues(issues: list[ToWorkOnIssue]) -> str:
