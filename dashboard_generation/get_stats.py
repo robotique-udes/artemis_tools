@@ -70,14 +70,14 @@ if __name__ == "__main__":
         indent=2,
     )
 
-    print("Epic")
-    pprint(
-        {
-            dep[k].fields.summary: v
-            for k, v in sum_time_estimate_by_epic(
-                issues_dict=diss, epics_dict=dep
-            ).items()
-        }
-    )
+    # print("Epic")
+    # pprint(
+    #     {
+    #         dep[k].fields.summary: v
+    #         for k, v in sum_time_estimate_by_epic(
+    #             issues_dict=diss, epics_dict=dep
+    #         ).items()
+    #     }
+    # )
 
     # pprint(diss["AR-5"].raw)
