@@ -23,11 +23,15 @@ from datetime import datetime
 
 from libdashboardjira import (
     get_all_worklogs_by_user,
+    get_all_worklogs_by_issue,
     get_average_work_hours_by_user,
     get_week_work_hours_by_user,
     get_average_work_hours_by_user_rolling,
     get_all_issues,
     issues_by_key,
+    WorklogIssue,
+    get_all_epics_by_key,
+    sum_time_estimate_by_epic,
 )
 
 if __name__ == "__main__":
@@ -43,7 +47,13 @@ if __name__ == "__main__":
 
     iss = get_all_issues(jira)
     diss = issues_by_key(iss)
-    wl = get_all_worklogs_by_user(jira, diss)
+    dwliss = get_all_worklogs_by_issue(jira, diss)
+    wl = get_all_worklogs_by_user(dwliss)
+    dep = get_all_epics_by_key(jira)
+
+    all_wl: list[WorklogIssue] = []
+    for user in wl:
+        all_wl.extend(wl[user])
 
     print("Semaine")
     pprint(get_week_work_hours_by_user(wl, hour=hour), indent=2)
@@ -59,3 +69,15 @@ if __name__ == "__main__":
         ),
         indent=2,
     )
+
+    print("Epic")
+    pprint(
+        {
+            dep[k].fields.summary: v
+            for k, v in sum_time_estimate_by_epic(
+                issues_dict=diss, epics_dict=dep
+            ).items()
+        }
+    )
+
+    # pprint(diss["AR-5"].raw)

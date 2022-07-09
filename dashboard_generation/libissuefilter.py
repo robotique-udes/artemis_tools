@@ -14,31 +14,24 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from jira.resources import Issue, Worklog
 
 from typing import Callable, TypeAlias, Iterable
+from jira.resources import Issue
 
 from types import SimpleNamespace
-from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
-class WorklogIssue:
-    wl: Worklog
-    issue: Issue
+IssuePredicate: TypeAlias = Callable[[Issue, dict[str, Issue]], bool]
 
 
-WorklogPredicate: TypeAlias = Callable[[WorklogIssue, dict[str, Issue]], bool]
-
-
-def filter_invert(pred: WorklogPredicate) -> WorklogPredicate:
-    def pred_inv(wi: WorklogIssue, id: dict[str, Issue]) -> bool:
-        return not pred(wi, id)
+def filter_invert(pred: IssuePredicate) -> IssuePredicate:
+    def pred_inv(i: Issue, id: dict[str, Issue]) -> bool:
+        return not pred(i, id)
 
     return pred_inv
 
 
-def filter_issuetype(issuetypes: Iterable[str]) -> WorklogPredicate:
+def filter_issuetype(issuetypes: Iterable[str]) -> IssuePredicate:
     def get_parent_issuetype(issue: Issue, issues_dict: dict[str, Issue]) -> str:
         if (
             issue.fields.issuetype.subtask is True
@@ -55,13 +48,13 @@ def filter_issuetype(issuetypes: Iterable[str]) -> WorklogPredicate:
         else:
             return issue.fields.issuetype.name
 
-    def pred(wi: WorklogIssue, id: dict[str, Issue]) -> bool:
-        return get_parent_issuetype(wi.issue, id) in issuetypes
+    def pred(i: Issue, id: dict[str, Issue]) -> bool:
+        return get_parent_issuetype(i, id) in issuetypes
 
     return pred
 
 
-def filter_epic(epics: Iterable[str | None]) -> WorklogPredicate:
+def filter_epic(epics: Iterable[str | None]) -> IssuePredicate:
     def get_parent_epic(
         issue: Issue, issues_dict: dict[str, Issue]
     ) -> Issue | SimpleNamespace:
@@ -77,18 +70,18 @@ def filter_epic(epics: Iterable[str | None]) -> WorklogPredicate:
         except AttributeError:
             return SimpleNamespace(fields=SimpleNamespace(summary=None))
 
-    def pred(wi: WorklogIssue, id: dict[str, Issue]) -> bool:
-        return get_parent_epic(wi.issue, id).fields.summary in epics
+    def pred(i: Issue, id: dict[str, Issue]) -> bool:
+        return get_parent_epic(i, id).fields.summary in epics
 
     return pred
 
 
-def filter_component(components: Iterable[str | None]) -> WorklogPredicate:
-    def pred(wi: WorklogIssue, id: dict[str, Issue]) -> bool:
-        if wi.issue.fields.components == []:  # type: ignore
+def filter_component(components: Iterable[str | None]) -> IssuePredicate:
+    def pred(i: Issue, id: dict[str, Issue]) -> bool:
+        if i.fields.components == []:  # type: ignore
             return None in components
 
-        c: set[str] = set(j.name for j in wi.issue.fields.components)  # type: ignore
+        c: set[str] = set(j.name for j in i.fields.components)  # type: ignore
         cp = set(components)
         return len(c & cp) > 0
 

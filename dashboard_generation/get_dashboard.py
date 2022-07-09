@@ -32,6 +32,7 @@ from libdashboardjira import (
     get_sprint_dates_str,
     get_sprint_goal,
     get_all_worklogs_by_user,
+    get_all_worklogs_by_issue,
     filter_worklog_for_week,
     get_all_issues,
     issues_by_key,
@@ -40,6 +41,8 @@ from libdashboardjira import (
     WorklogUser,
     get_all_worked_on_issue_from_worklogs,
     get_all_open_issues_in_sprints,
+    get_all_epics_with_time_estimate_by_key,
+    WorklogIssue,
 )
 
 from libdashboardlatex import (
@@ -59,8 +62,6 @@ from libdashboardlatex import (
 
 from libdatetime import get_next_day, format_date, Weekday, format_date_file_postfix
 
-from libworklogfilter import WorklogIssue
-
 from libdashboardyaml import DashboardConfig
 
 from libdashboardgraph import generate_image
@@ -70,7 +71,7 @@ from PyPDF2 import PdfMerger
 if __name__ == "__main__":
     load_dotenv()
 
-    # as_date = datetime(2022, 6, 22)
+    # as_date = datetime(2022, 7, 6)
     as_date = datetime.today()
     hour = 0
 
@@ -89,18 +90,20 @@ if __name__ == "__main__":
 
     iss = get_all_issues(jira)
     diss = issues_by_key(iss)
-    wl = get_all_worklogs_by_user(jira, diss)
+    dwliss = get_all_worklogs_by_issue(jira, diss)
+    wl = get_all_worklogs_by_user(dwliss)
 
     all_wl: list[WorklogIssue] = []
     for user in wl:
         all_wl.extend(wl[user])
+
+    depics = get_all_epics_with_time_estimate_by_key(jira=jira, issues_dict=diss)
 
     worked_on_issues = sorted(
         [
             WorkedOnIssue(i)
             for i in get_all_worked_on_issue_from_worklogs(
                 filter_worklog_for_week(all_wl, as_date=as_date, hour=hour),
-                sprint=sprint,
             )
         ],
         key=lambda i: i.status,
@@ -155,7 +158,8 @@ if __name__ == "__main__":
         r"@@SUIVI-SUJETS@@": get_list_for_re_sub(cfg.sujets_suivi),
         r"@@ORDRE-JOUR@@": get_list_for_re_sub(cfg.ordre_du_jour),
         r"%\s+@@EPICS-AVANCEMENTS@@": get_epic_advancements(
-            jira=jira, filter=cfg.epic_filter
+            depics,
+            filter=cfg.epic_filter,
         ),
         r"%\s+@@SEMAINE-RISQUES@@": get_risks(cfg.risques),
         r"%\s+@@SEMAINE-PROBLEMES@@": get_problems(cfg.problemes),

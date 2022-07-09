@@ -88,3 +88,7 @@ def format_date(date: datetime) -> str:
 
 def format_date_file_postfix(date: datetime) -> str:
     return f"{date.strftime('%Y_%m_%d')}"
+
+
+def s_to_h(seconds: int) -> float:
+    return seconds / 3600

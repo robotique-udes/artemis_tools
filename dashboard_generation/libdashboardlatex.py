@@ -15,7 +15,6 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from jira.resources import Issue
-from jira import JIRA
 
 import re
 from pathlib import Path
@@ -25,8 +24,10 @@ from datetime import datetime
 from typing import Iterable
 
 from libdashboardjira import (
-    get_all_epics,
+    TimeEstimate,
 )
+
+from libdatetime import s_to_h
 
 
 def escape_latex(text: str) -> str:
@@ -39,11 +40,7 @@ def escape_latex(text: str) -> str:
     return text
 
 
-def s_to_h(seconds: int) -> float:
-    return seconds / 3600
-
-
-def format_progress(progress: int) -> str:
+def format_progress(progress: float) -> str:
     if progress == 0:
         return f"\\\\cellcolor{{red}}{progress:.0f}\\\\%"
     elif progress > 0 and progress <= 100 * 2 / 3:
@@ -118,21 +115,29 @@ class Budget:
 
 
 class Epic:
-    def __init__(self, epic: Issue) -> None:
+    def format_ratio(self) -> str:
+        ratio = self.te.ratio_percent
+        if ratio <= -1:
+            return "-"
+        elif ratio <= 100 * 2 / 3 and self.te.progress_percent == 100:
+            return f"\\\\cellcolor{{orange}}{ratio:.0f}\\\\%"
+        elif ratio >= 100 * 3 / 2:
+            return f"\\\\cellcolor{{orange}}{ratio:.0f}\\\\%"
+        else:
+            return f"{ratio:.0f}\\\\%"
+
+    def __init__(self, epic: Issue, time_estimate: TimeEstimate) -> None:
         self.epic = epic
         self.name = epic.fields.summary
         self.key = epic.key
         self.duedate = epic.fields.duedate
         self.assignee: str = epic.fields.assignee.displayName if epic.fields.assignee else ""  # type: ignore
-        self.worked: int = s_to_h(epic.fields.aggregateprogress.progress)  # type: ignore
-        self.estimate: int = s_to_h(epic.fields.aggregateprogress.total)  # type: ignore
-        try:
-            self.percent: int = epic.fields.aggregateprogress.percent  # type: ignore
-        except AttributeError:
-            self.percent = 0
+
+        self.te = time_estimate
+        self.te.original_estimate = s_to_h(epic.fields.timeoriginalestimate or 0.0)  # type: ignore
 
     def __str__(self) -> str:
-        return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.estimate:.0f} & {self.worked:.0f} & {format_progress(self.percent)} \\\\\\\\ \\\\hline"
+        return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.te.original_estimate:.0f} & {self.te.current_estimate:.0f} & {format_progress(self.te.progress_percent)} & {self.format_ratio()} \\\\\\\\ \\\\hline"
 
 
 class WorkedOnIssue:
@@ -165,9 +170,9 @@ class WorkedOnIssue:
         self.assignee = (
             issue.fields.assignee.displayName if issue.fields.assignee else ""
         )
-        self.original_estimate = s_to_h(issue.fields.timeoriginalestimate or 0)  # type: ignore
-        self.remaining_estimate = s_to_h(issue.fields.timeestimate or 0)  # type: ignore
-        self.worked = s_to_h(issue.fields.timespent or 0)  # type: ignore
+        self.original_estimate = s_to_h(issue.fields.timeoriginalestimate or 0.0)  # type: ignore
+        self.remaining_estimate = s_to_h(issue.fields.timeestimate or 0.0)  # type: ignore
+        self.worked = s_to_h(issue.fields.timespent or 0.0)  # type: ignore
         try:
             self.progress: int = issue.fields.progress.percent  # type: ignore
         except AttributeError:
@@ -185,7 +190,7 @@ class ToWorkOnIssue:
         self.assignee = (
             issue.fields.assignee.displayName if issue.fields.assignee else ""
         )
-        self.remaining_estimate = s_to_h(issue.fields.timeestimate or 0)  # type: ignore
+        self.remaining_estimate = s_to_h(issue.fields.timeestimate or 0.0)  # type: ignore
         try:
             self.progress: int = issue.fields.progress.percent  # type: ignore
         except AttributeError:
@@ -195,11 +200,13 @@ class ToWorkOnIssue:
         return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.remaining_estimate:.1f} & {format_progress(self.progress)} \\\\\\\\ \\\\hline"
 
 
-def get_epic_advancements(jira: JIRA, filter: Iterable[str]) -> str:
+def get_epic_advancements(
+    epics: dict[str, tuple[Issue, TimeEstimate]], filter: Iterable[str]
+) -> str:
     return "\n".join(
-        str(Epic(epic))  # type: ignore
-        for epic in sorted(get_all_epics(jira), key=lambda x: x.fields.summary)  # type: ignore
-        if any(f.lower() in Epic(epic).name.lower() for f in filter)  # type: ignore
+        str(Epic(epic, te))  # type: ignore
+        for epic, te in sorted(epics.values(), key=lambda x: x[0].fields.summary)  # type: ignore
+        if any(f.lower() in Epic(epic, te).name.lower() for f in filter)  # type: ignore
     )
 
 

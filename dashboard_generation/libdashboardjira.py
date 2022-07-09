@@ -16,9 +16,10 @@
 
 from jira import JIRA
 from jira.client import ResultList
-from jira.resources import Sprint, User, Issue
+from jira.resources import Sprint, User, Issue, Worklog
 from datetime import datetime, timedelta
 from collections import defaultdict
+from dataclasses import dataclass
 
 from typing import Iterable, cast
 import re
@@ -26,7 +27,11 @@ from functools import partial
 
 from concurrent.futures import ThreadPoolExecutor
 
-from libworklogfilter import WorklogPredicate, filter_issuetype, WorklogIssue
+from libissuefilter import (
+    IssuePredicate,
+    filter_issuetype,
+    filter_epic,
+)
 
 from libdatetime import (
     get_date,
@@ -34,9 +39,53 @@ from libdatetime import (
     get_last_day,
     get_next_day,
     Weekday,
+    s_to_h,
 )
 
-from libdict import merge_dicts_of_lists
+
+@dataclass(frozen=True)
+class WorklogIssue:
+    wl: Worklog
+    issue: Issue
+
+
+@dataclass
+class TimeEstimate:
+    original_estimate: float
+    remaining_estimate: float
+    worked: float
+
+    @staticmethod
+    def from_issue(issue: Issue) -> "TimeEstimate":
+        return TimeEstimate(
+            original_estimate=s_to_h(issue.fields.timeoriginalestimate or 0.0),  # type: ignore
+            remaining_estimate=s_to_h(issue.fields.timeestimate or 0.0),  # type: ignore
+            worked=s_to_h(issue.fields.timespent or 0.0),  # type: ignore
+        )
+
+    @staticmethod
+    def null() -> "TimeEstimate":
+        return TimeEstimate(original_estimate=0.0, remaining_estimate=0.0, worked=0.0)
+
+    @property
+    def current_estimate(self) -> float:
+        return self.remaining_estimate + self.worked
+
+    @property
+    def progress_percent(self) -> float:
+        return (
+            100 * self.worked / self.current_estimate
+            if self.current_estimate > 0
+            else 0.0
+        )
+
+    @property
+    def ratio_percent(self) -> float:
+        return (
+            100 * self.worked / self.original_estimate
+            if self.original_estimate > 0
+            else -1.0
+        )
 
 
 class WorklogUser:
@@ -175,6 +224,36 @@ def get_all_epics(jira: JIRA) -> ResultList[Issue]:
     )
 
 
+def get_all_epics_by_key(jira: JIRA) -> dict[str, Issue]:
+    return {
+        i.key: i
+        for i in cast(
+            ResultList[Issue],
+            jira.search_issues("project = Artemis and issuetype = Epic", maxResults=0),
+        )
+    }
+
+
+def add_time_estimate_to_epics(
+    epics_dict: dict[str, Issue], epics_te_dict: dict[str, TimeEstimate]
+) -> dict[str, tuple[Issue, TimeEstimate]]:
+    ds: defaultdict[str, TimeEstimate] = defaultdict(
+        lambda: TimeEstimate.null(), **epics_te_dict
+    )
+    return {k: (v, ds[k]) for k, v in epics_dict.items()}
+
+
+def get_all_epics_with_time_estimate_by_key(
+    jira: JIRA,
+    issues_dict: dict[str, Issue],
+) -> dict[str, tuple[Issue, TimeEstimate]]:
+    depics = get_all_epics_by_key(jira)
+    depics_te_sum = sum_time_estimate_by_epic(
+        issues_dict=issues_dict, epics_dict=depics
+    )
+    return add_time_estimate_to_epics(depics, depics_te_sum)
+
+
 def get_tb_issue(
     jira: JIRA, datetime: datetime = get_next_day(Weekday.Thursday)
 ) -> Issue:
@@ -197,30 +276,36 @@ def get_tb_issue_yaml(
     )
 
 
-def _get_worklogs_by_user_for_issue(
+def get_worklogs_for_issue(
     issue: Issue,
     jira: JIRA,
-) -> dict[str, list[WorklogIssue]]:
-    d: dict[str, list[WorklogIssue]] = defaultdict(list)
-
-    for wl in jira.worklogs(issue.key):
-        d[wl.author.displayName].append(WorklogIssue(wl, issue))
-
-    return d
+) -> tuple[str, list[WorklogIssue]]:
+    return issue.key, [WorklogIssue(wl, issue) for wl in jira.worklogs(issue.key)]
 
 
-def get_all_worklogs_by_user(
+def get_all_worklogs_by_issue(
     jira: JIRA, issues_dict: dict[str, Issue]
 ) -> dict[str, list[WorklogIssue]]:
     d: dict[str, list[WorklogIssue]] = {}
 
     with ThreadPoolExecutor(max_workers=10) as executor:
-        for d2 in executor.map(
-            partial(_get_worklogs_by_user_for_issue, jira=jira),
+        for k, d2 in executor.map(
+            partial(get_worklogs_for_issue, jira=jira),
             issues_dict.values(),
         ):
-            d = merge_dicts_of_lists((d, d2))
+            d[k] = d2
 
+    return d
+
+
+def get_all_worklogs_by_user(
+    worklog_dict: dict[str, list[WorklogIssue]]
+) -> dict[str, list[WorklogIssue]]:
+    d: dict[str, list[WorklogIssue]] = defaultdict(list)
+
+    for _, v in worklog_dict.items():
+        for wli in v:
+            d[wli.wl.author.displayName].append(wli)
     return d
 
 
@@ -237,25 +322,9 @@ def filter_worklog_for_week(
     ]
 
 
-def get_all_worklogs_by_user_for_week(jira: JIRA) -> dict[str, list[WorklogIssue]]:
-    lower_bound = get_last_day(Weekday.Thursday)
-    upper_bound = get_next_day(Weekday.Thursday)
-
-    d: defaultdict[str, list[WorklogIssue]] = defaultdict(list)
-    for issue in get_all_issues(jira):
-        for worklog in jira.worklogs(issue.key):
-            if (
-                get_date(worklog.started) >= lower_bound
-                and get_date(worklog.started) < upper_bound
-            ):
-                d[worklog.author.displayName].append(WorklogIssue(worklog, issue))
-
-    return dict(d)
-
-
 def sum_worklogs(
     worklogs: list[WorklogIssue],
-    predicate: WorklogPredicate | None = None,
+    predicate: IssuePredicate | None = None,
     issues_dict: dict[str, Issue] | None = None,
 ) -> float:
     if predicate is not None and issues_dict is None:
@@ -267,10 +336,43 @@ def sum_worklogs(
         sum(
             i.wl.timeSpentSeconds
             for i in worklogs
-            if predicate(i, cast(dict[str, Issue], issues_dict))
+            if predicate(i.issue, cast(dict[str, Issue], issues_dict))
         )
         / 3600
     )
+
+
+def sum_time_estimate_for_issues(
+    issues_dict: dict[str, Issue],
+    predicate: IssuePredicate | None = None,
+) -> TimeEstimate:
+
+    predicate = predicate or (lambda x, y: True)
+    estimates = [
+        TimeEstimate.from_issue(i)
+        for i in issues_dict.values()
+        if predicate(i, issues_dict)
+    ]
+    return TimeEstimate(
+        original_estimate=sum(i.original_estimate for i in estimates),
+        remaining_estimate=sum(i.remaining_estimate for i in estimates),
+        worked=sum(i.worked for i in estimates),
+    )
+
+
+def sum_time_estimate_by_epic(
+    issues_dict: dict[str, Issue],
+    epics_dict: dict[str, Issue],
+) -> dict[str, TimeEstimate]:
+    d: dict[str, TimeEstimate] = {}
+
+    for k, ep in epics_dict.items():
+        d[k] = sum_time_estimate_for_issues(
+            predicate=filter_epic((ep.fields.summary,)),
+            issues_dict=issues_dict,
+        )
+
+    return d
 
 
 def get_week_work_hours_by_user(
@@ -370,9 +472,7 @@ def get_average_work_hours_by_user_rolling(
     return d
 
 
-def get_all_worked_on_issue_from_worklogs(
-    worklogs: list[WorklogIssue], sprint: Sprint
-) -> set[Issue]:
+def get_all_worked_on_issue_from_worklogs(worklogs: list[WorklogIssue]) -> set[Issue]:
     return {i.issue for i in worklogs}
 
 
