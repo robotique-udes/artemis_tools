@@ -34,6 +34,7 @@ class Weekday(Enum):
 import locale
 
 locale.setlocale(locale.LC_TIME, locale.getlocale())
+locale.setlocale(locale.LC_COLLATE, locale.getlocale())
 
 
 def local_today() -> datetime:
@@ -92,3 +93,7 @@ def format_date_file_postfix(date: datetime) -> str:
 
 def s_to_h(seconds: int) -> float:
     return seconds / 3600
+
+
+def compare_key(s: str) -> str:
+    return locale.strxfrm(s)

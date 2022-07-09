@@ -200,6 +200,19 @@ class ToWorkOnIssue:
         return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.remaining_estimate:.1f} & {format_progress(self.progress)} \\\\\\\\ \\\\hline"
 
 
+class MemberStandup:
+    def __init__(
+        self, name: str, work_done: str, work_to_do: str, important: str
+    ) -> None:
+        self.name = name
+        self.work_done = work_done
+        self.work_to_do = work_to_do
+        self.important = important
+
+    def __str__(self) -> str:
+        return f"{escape_latex(self.name)} & {escape_latex(self.work_done)} & {escape_latex(self.work_to_do)} & \\\\textbf{{{escape_latex(self.important)}}} \\\\\\\\ \\\\hline"
+
+
 def get_epic_advancements(
     epics: dict[str, tuple[Issue, TimeEstimate]], filter: Iterable[str]
 ) -> str:
@@ -228,6 +241,10 @@ def get_to_work_on_issues(issues: list[ToWorkOnIssue]) -> str:
 
 def get_worked_on_issues(issues: list[WorkedOnIssue]) -> str:
     return "\n".join(str(issue) for issue in issues)
+
+
+def get_standup(standup: list[MemberStandup]) -> str:
+    return "\n".join(str(member) for member in standup)
 
 
 def get_list_for_re_sub(items: list[str]) -> str:

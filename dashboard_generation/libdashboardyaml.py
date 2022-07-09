@@ -16,9 +16,11 @@
 
 from ruamel.yaml import YAML
 from typing import Any
-from libdashboardlatex import Risk, Problem, Budget
+from libdashboardlatex import Risk, Problem, Budget, MemberStandup
 
 from datetime import datetime
+
+from libdatetime import compare_key
 
 yaml = YAML(pure=True)
 
@@ -82,3 +84,18 @@ class DashboardConfig:
             )
             for i in self.config["budget"]
         ]
+
+    @property
+    def tour_de_table(self) -> list[MemberStandup]:
+        return sorted(
+            [
+                MemberStandup(
+                    name=i["nom"],
+                    work_done=i["fait"],
+                    work_to_do=i["a_faire"],
+                    important=i["important"] if "important" in i else "",
+                )
+                for i in self.config["tour_de_table"]
+            ],
+            key=lambda x: compare_key(x.name.split()[-1]),
+        )

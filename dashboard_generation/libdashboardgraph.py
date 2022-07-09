@@ -19,6 +19,7 @@ from bokeh.io import export_png, export_svg  # type: ignore
 from bokeh.models import ColumnDataSource, FactorRange  # type: ignore
 
 from libdashboardjira import WorklogUser
+from libdatetime import compare_key
 from pathlib import Path
 
 from enum import Enum
@@ -47,7 +48,7 @@ def generate_image(h: list[WorklogUser], file: Path | None = None) -> None:
         LABELS.Avg.value,
     ]
 
-    nh = sorted(h, key=lambda x: x.user.split()[-1], reverse=True)
+    nh = sorted(h, key=lambda x: compare_key(x.user.split()[-1]), reverse=True)
 
     tech: list[float] = []
     admin: list[float] = []

@@ -31,6 +31,8 @@ from libissuefilter import (
     IssuePredicate,
     filter_issuetype,
     filter_epic,
+    filter_and,
+    filter_invert,
 )
 
 from libdatetime import (
@@ -368,10 +370,14 @@ def sum_time_estimate_by_epic(
 
     for k, ep in epics_dict.items():
         d[k] = sum_time_estimate_for_issues(
-            predicate=filter_epic((ep.fields.summary,)),
+            predicate=filter_and(
+                (
+                    filter_epic((ep.fields.summary,)),
+                    filter_invert(filter_issuetype(("Epic",))),
+                )
+            ),
             issues_dict=issues_dict,
         )
-
     return d
 
 

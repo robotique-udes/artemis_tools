@@ -31,6 +31,13 @@ def filter_invert(pred: IssuePredicate) -> IssuePredicate:
     return pred_inv
 
 
+def filter_and(preds: Iterable[IssuePredicate]) -> IssuePredicate:
+    def pred(i: Issue, id: dict[str, Issue]) -> bool:
+        return all(p(i, id) for p in preds)
+
+    return pred
+
+
 def filter_issuetype(issuetypes: Iterable[str]) -> IssuePredicate:
     def get_parent_issuetype(issue: Issue, issues_dict: dict[str, Issue]) -> str:
         if (

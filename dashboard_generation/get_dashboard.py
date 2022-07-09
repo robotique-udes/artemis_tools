@@ -58,9 +58,16 @@ from libdashboardlatex import (
     get_to_work_on_issues,
     get_worked_on_issues,
     escape_latex,
+    get_standup,
 )
 
-from libdatetime import get_next_day, format_date, Weekday, format_date_file_postfix
+from libdatetime import (
+    get_next_day,
+    format_date,
+    Weekday,
+    format_date_file_postfix,
+    compare_key,
+)
 
 from libdashboardyaml import DashboardConfig
 
@@ -71,8 +78,8 @@ from PyPDF2 import PdfMerger
 if __name__ == "__main__":
     load_dotenv()
 
-    # as_date = datetime(2022, 7, 6)
-    as_date = datetime.today()
+    as_date = datetime(2022, 7, 6)
+    # as_date = datetime.today()
     hour = 0
 
     jira = JIRA(
@@ -100,13 +107,18 @@ if __name__ == "__main__":
     depics = get_all_epics_with_time_estimate_by_key(jira=jira, issues_dict=diss)
 
     worked_on_issues = sorted(
-        [
-            WorkedOnIssue(i)
-            for i in get_all_worked_on_issue_from_worklogs(
-                filter_worklog_for_week(all_wl, as_date=as_date, hour=hour),
-            )
-        ],
-        key=lambda i: i.status,
+        sorted(
+            [
+                WorkedOnIssue(i)
+                for i in get_all_worked_on_issue_from_worklogs(
+                    filter_worklog_for_week(all_wl, as_date=as_date, hour=hour),
+                )
+            ],
+            key=lambda x: compare_key(x.assignee.split()[-1])
+            if x.assignee != ""
+            else "",
+        ),
+        key=lambda x: compare_key(x.status),
     )
 
     to_work_on_issues = sorted(
@@ -120,7 +132,7 @@ if __name__ == "__main__":
                 },
             )
         ],
-        key=lambda x: x.assignee,
+        key=lambda x: compare_key(x.assignee.split()[-1]) if x.assignee != "" else "",
     )
 
     wl = get_work_hours_by_user_by_category(
@@ -165,6 +177,7 @@ if __name__ == "__main__":
         r"%\s+@@SEMAINE-PROBLEMES@@": get_problems(cfg.problemes),
         r"%\s+@@BLOC-QUESTIONS@@": get_block_questions(cfg.questions),
         r"%\s+@@SEMAINE-FINANCES@@": get_budget(cfg.finances),
+        r"%\s+@@TOUR-DE-TABLE@@": get_standup(cfg.tour_de_table),
         r"@@SEMAINE-TACHES-FAITES@@": get_worked_on_issues(worked_on_issues),
         r"@@SEMAINE-TACHES-A-FAIRE@@": get_to_work_on_issues(to_work_on_issues),
     }
