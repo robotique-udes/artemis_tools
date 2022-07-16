@@ -78,8 +78,8 @@ from PyPDF2 import PdfMerger
 if __name__ == "__main__":
     load_dotenv()
 
-    as_date = datetime(2022, 7, 6)
-    # as_date = datetime.today()
+    # as_date = datetime(2022, 7, 12)
+    as_date = datetime.today()
     hour = 0
 
     jira = JIRA(
@@ -116,7 +116,7 @@ if __name__ == "__main__":
             ],
             key=lambda x: compare_key(x.assignee.split()[-1])
             if x.assignee != ""
-            else "",
+            else "ZZZ",
         ),
         key=lambda x: compare_key(x.status),
     )
@@ -132,7 +132,9 @@ if __name__ == "__main__":
                 },
             )
         ],
-        key=lambda x: compare_key(x.assignee.split()[-1]) if x.assignee != "" else "",
+        key=lambda x: compare_key(x.assignee.split()[-1])
+        if x.assignee != ""
+        else "ZZZ",
     )
 
     wl = get_work_hours_by_user_by_category(

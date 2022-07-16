@@ -137,7 +137,7 @@ class Epic:
         self.te.original_estimate = s_to_h(epic.fields.timeoriginalestimate or 0.0)  # type: ignore
 
     def __str__(self) -> str:
-        return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.te.original_estimate:.0f} & {self.te.current_estimate:.0f} & {format_progress(self.te.progress_percent)} & {self.format_ratio()} \\\\\\\\ \\\\hline"
+        return f"{escape_latex(self.name)} & {escape_latex(self.assignee)} & {self.te.original_estimate:.1f} & {self.te.current_estimate:.1f} & {self.te.remaining_estimate:.1f} & {self.te.worked:.0f} & {format_progress(self.te.progress_percent)} & {self.format_ratio()} \\\\\\\\ \\\\hline"
 
 
 class WorkedOnIssue:
@@ -173,6 +173,7 @@ class WorkedOnIssue:
         self.original_estimate = s_to_h(issue.fields.timeoriginalestimate or 0.0)  # type: ignore
         self.remaining_estimate = s_to_h(issue.fields.timeestimate or 0.0)  # type: ignore
         self.worked = s_to_h(issue.fields.timespent or 0.0)  # type: ignore
+        self.current_estimate = self.remaining_estimate + self.worked
         try:
             self.progress: int = issue.fields.progress.percent  # type: ignore
         except AttributeError:
@@ -180,7 +181,7 @@ class WorkedOnIssue:
         self.ratio = 100 * self.worked / self.original_estimate if self.original_estimate != 0 else -1  # type: ignore
 
     def __str__(self) -> str:
-        return f"{escape_latex(self.name)} & {self.format_status()} & {escape_latex(self.assignee)} & {self.original_estimate:.1f} & {self.remaining_estimate:.1f} & {self.worked:.1f} & {format_progress(self.progress)} & {self.format_ratio()} \\\\\\\\ \\\\hline"
+        return f"{escape_latex(self.name)} & {self.format_status()} & {escape_latex(self.assignee)} & {self.original_estimate:.1f} & {self.current_estimate:.1f} & {self.remaining_estimate:.1f} & {self.worked:.1f} & {format_progress(self.progress)} & {self.format_ratio()} \\\\\\\\ \\\\hline"
 
 
 class ToWorkOnIssue:
@@ -201,6 +202,9 @@ class ToWorkOnIssue:
 
 
 class MemberStandup:
+    def bold_name(self) -> str:
+        return f"\\\\textbf{{{escape_latex(self.name)}}}"
+
     def __init__(
         self, name: str, work_done: str, work_to_do: str, important: str
     ) -> None:
@@ -210,7 +214,8 @@ class MemberStandup:
         self.important = important
 
     def __str__(self) -> str:
-        return f"{escape_latex(self.name)} & {escape_latex(self.work_done)} & {escape_latex(self.work_to_do)} & \\\\textbf{{{escape_latex(self.important)}}} \\\\\\\\ \\\\hline"
+        # return f"{escape_latex(self.name)} & {escape_latex(self.work_done)} & {escape_latex(self.work_to_do)} & \\\\textbf{{{escape_latex(self.important)}}} \\\\\\\\ \\\\hline"
+        return f"{escape_latex(self.name) if self.name != 'Équipe' else self.bold_name()} & {escape_latex(self.work_done)} & {escape_latex(self.work_to_do)} \\\\\\\\ \\\\hline"
 
 
 def get_epic_advancements(

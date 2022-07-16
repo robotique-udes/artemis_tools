@@ -87,7 +87,7 @@ class DashboardConfig:
 
     @property
     def tour_de_table(self) -> list[MemberStandup]:
-        return sorted(
+        l = sorted(
             [
                 MemberStandup(
                     name=i["nom"],
@@ -96,6 +96,19 @@ class DashboardConfig:
                     important=i["important"] if "important" in i else "",
                 )
                 for i in self.config["tour_de_table"]
+                if i["nom"] != "Équipe"
             ],
             key=lambda x: compare_key(x.name.split()[-1]),
         )
+        l.extend(
+            MemberStandup(
+                name=i["nom"],
+                work_done=i["fait"],
+                work_to_do=i["a_faire"],
+                important=i["important"] if "important" in i else "",
+            )
+            for i in self.config["tour_de_table"]
+            if i["nom"] == "Équipe"
+        )
+
+        return l

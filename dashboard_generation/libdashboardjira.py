@@ -493,6 +493,7 @@ def get_all_open_issues_in_sprints(
         if (
             sprints_ids & {j.id for j in (cast(list[Sprint], i.fields.customfield_10020) or [])}  # type: ignore
             != set()
+            and not "[TODO_AUTO]" in i.fields.summary
         )
         and i.fields.status.statusCategory.name != "Terminé"
     }
